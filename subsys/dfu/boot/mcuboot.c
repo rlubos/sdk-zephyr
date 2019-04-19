@@ -443,12 +443,14 @@ int mcuboot_swap_type(void)
 	int rc;
 	int i;
 
-	rc = boot_read_swap_state(FLASH_AREA_IMAGE_PRIMARY, &state_primary_slot);
+	rc = boot_read_swap_state(FLASH_AREA_IMAGE_PRIMARY,
+				  &state_primary_slot);
 	if (rc != 0) {
 		return rc;
 	}
 
-	rc = boot_read_swap_state(FLASH_AREA_IMAGE_SECONDARY, &state_secondary_slot);
+	rc = boot_read_swap_state(FLASH_AREA_IMAGE_SECONDARY,
+				  &state_secondary_slot);
 	if (rc != 0) {
 		return rc;
 	}
