@@ -91,7 +91,7 @@ if(SUPPORTS_DTS)
 
   foreach(dts_root ${DTS_ROOT})
     set(full_path ${dts_root}/dts/bindings)
-    if(EXISTS ${full_path})
+    if(EXISTS ${full_path} AND NOT ${full_path} IN_LIST DTS_ROOT_BINDINGS)
       list(APPEND
         DTS_ROOT_BINDINGS
         ${full_path}
