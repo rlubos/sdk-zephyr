@@ -894,6 +894,21 @@ int do_write_op_tlv(struct lwm2m_message *msg)
 	struct oma_tlv tlv;
 	int ret;
 
+	if (msg->path.obj_id == 5 && msg->path.res_id == 0) {
+		ret = do_write_op_tlv_item(msg);
+		/*
+			* ignore errors for CREATE op
+			* for OP_CREATE and BOOTSTRAP WRITE: errors on optional
+			* resources are ignored (ENOTSUP)
+			*/
+		if (ret < 0 &&
+			!((ret == -ENOTSUP) &&
+			(msg->ctx->bootstrap_mode ||
+			msg->operation == LWM2M_OP_CREATE))) {
+			return ret;
+		}
+	}
+
 	while (true) {
 		/*
 		 * This initial read of TLV data won't advance frag/offset.

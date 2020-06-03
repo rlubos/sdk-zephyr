@@ -149,8 +149,11 @@ static int sock_nfds;
 struct block_context {
 	struct coap_block_context ctx;
 	s64_t timestamp;
+	u32_t opaque_len;
 	u8_t token[8];
 	u8_t tkl;
+	bool last_block : 1;
+	/* TODO Consider moving last_block into coap_block_context */
 };
 
 static struct block_context block1_contexts[NUM_BLOCK1_CONTEXT];
@@ -280,6 +283,8 @@ init_block_ctx(const u8_t *token, u8_t tkl, struct block_context **ctx)
 	memcpy((*ctx)->token, token, tkl);
 	coap_block_transfer_init(&(*ctx)->ctx, lwm2m_default_block_size(), 0);
 	(*ctx)->timestamp = timestamp;
+	(*ctx)->opaque_len = 0;
+	(*ctx)->last_block = false;
 
 	return 0;
 }
@@ -2196,14 +2201,20 @@ static int lwm2m_read_handler(struct lwm2m_engine_obj_inst *obj_inst,
 size_t lwm2m_engine_get_opaque_more(struct lwm2m_input_context *in,
 				    u8_t *buf, size_t buflen, bool *last_block)
 {
-	u16_t in_len = in->opaque_len;
+	u32_t in_len = in->opaque_len;
+	u16_t remaining = in->in_cpkt->max_len - in->offset;
 
 	if (in_len > buflen) {
 		in_len = buflen;
 	}
 
+	if (in_len > remaining) {
+		in_len = remaining;
+	}
+
 	in->opaque_len -= in_len;
-	if (in->opaque_len == 0U) {
+	remaining -= in_len;
+	if (in->opaque_len == 0U || remaining == 0) {
 		*last_block = true;
 	}
 
@@ -2221,14 +2232,24 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 				      struct lwm2m_engine_res_inst *res_inst,
 				      struct lwm2m_input_context *in,
 				      void *data_ptr, size_t data_len,
-				      bool last_block, size_t total_size)
+				      struct block_context *block_ctx)
 {
 	size_t len = 1;
 	bool last_pkt_block = false, first_read = true;
+	int block_num = 0;
 	int ret = 0;
+	size_t total_size = 0;
+	bool last_block = true;
+
+	if (block_ctx != NULL) {
+		block_num = block_ctx->ctx.current /
+			coap_block_size_to_bytes(block_ctx->ctx.block_size);
+		last_block = block_ctx->last_block;
+		total_size = block_ctx->ctx.total_size;
+	}
 
 	while (!last_pkt_block && len > 0) {
-		if (first_read) {
+		if (first_read && block_num == 0) {
 			len = engine_get_opaque(in, (u8_t *)data_ptr,
 						data_len, &last_pkt_block);
 			if (len == 0) {
@@ -2236,11 +2257,23 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 				return 0;
 			}
 
+			if (block_ctx != NULL) {
+				block_ctx->opaque_len = in->opaque_len;
+			}
+
 			first_read = false;
 		} else {
+			if (block_ctx != NULL) {
+				in->opaque_len = block_ctx->opaque_len;
+			}
+
 			len = lwm2m_engine_get_opaque_more(in, (u8_t *)data_ptr,
 							   data_len,
 							   &last_pkt_block);
+
+			if (block_ctx != NULL) {
+				block_ctx->opaque_len = in->opaque_len;
+			}
 		}
 
 		if (len == 0) {
@@ -2248,12 +2281,13 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 		}
 
 		if (res->post_write_cb) {
-			ret = res->post_write_cb(obj_inst->obj_inst_id,
-						 res->res_id,
-						 res_inst->res_inst_id,
-						 data_ptr, len,
-						 last_pkt_block && last_block,
-						 total_size);
+			ret = res->post_write_cb(
+				obj_inst->obj_inst_id, res->res_id,
+				res_inst->res_inst_id, data_ptr, len,
+				last_pkt_block && last_block, total_size);
+			/* TODO Shall it really be total size or rather opaque
+			 * length?
+			 */
 			if (ret < 0) {
 				return ret;
 			}
@@ -2305,8 +2339,6 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 		/* Get block1 option for checking MORE block flag */
 		ret = get_option_int(msg->in.in_cpkt, COAP_OPTION_BLOCK1);
 		if (ret >= 0) {
-			last_block = !GET_MORE(ret);
-
 			/* Get block_ctx for total_size (might be zero) */
 			tkl = coap_header_get_token(msg->in.in_cpkt, token);
 			if (tkl && !get_block_ctx(token, tkl, &block_ctx)) {
@@ -2315,7 +2347,7 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 					" last:%u",
 					block_ctx->ctx.total_size,
 					block_ctx->ctx.current,
-					last_block);
+					block_ctx->last_block);
 			}
 		}
 	}
@@ -2327,8 +2359,7 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 			ret = lwm2m_write_handler_opaque(obj_inst, res,
 							 res_inst, &msg->in,
 							 data_ptr, data_len,
-							 last_block,
-							 total_size);
+							 block_ctx);
 			if (ret < 0) {
 				return ret;
 			}
@@ -3471,6 +3502,8 @@ static int handle_request(struct coap_packet *request,
 			LOG_ERR("Error from block update: %d", r);
 			goto error;
 		}
+
+		block_ctx->last_block = last_block;
 
 		/* Handle blockwise 1 (Part 1): Set response code */
 		if (!last_block) {
