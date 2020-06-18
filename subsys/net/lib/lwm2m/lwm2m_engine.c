@@ -2258,6 +2258,9 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 				return 0;
 			}
 
+			/* TODO need to better than that, store header size? */
+			block_ctx->ctx.total_size = in->opaque_len + len;
+
 			if (block_ctx != NULL) {
 				block_ctx->opaque_len = in->opaque_len;
 			}
