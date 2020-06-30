@@ -31,6 +31,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <ctype.h>
 #include <errno.h>
 #include <init.h>
+#include <sys/mutex.h>
 #include <sys/printk.h>
 #include <net/net_ip.h>
 #include <net/http_parser_url.h>
@@ -1028,13 +1029,19 @@ int lwm2m_send_message(struct lwm2m_message *msg)
 
 	msg->send_attempts++;
 
+	sys_mutex_lock(&msg->ctx->send_lock, K_FOREVER);
+
 	if (send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0) < 0) {
+		sys_mutex_unlock(&msg->ctx->send_lock);
 		if (msg->type == COAP_TYPE_CON) {
 			coap_pending_clear(msg->pending);
 		}
 
+		LOG_ERR("Failed to send packet, err %d", errno);
+
 		return -errno;
 	}
+	sys_mutex_unlock(&msg->ctx->send_lock);
 
 	if (msg->type == COAP_TYPE_CON) {
 		s32_t remaining = k_delayed_work_remaining_get(
@@ -3760,10 +3767,21 @@ static void retransmit_request(struct k_work *work)
 
 	LOG_INF("Resending message: %p", msg);
 	msg->send_attempts++;
+
+	sys_mutex_lock(&client_ctx->send_lock, K_FOREVER);
+
+	if (msg->ctx == NULL) {
+		LOG_INF("Response for %p already handled", msg);
+		sys_mutex_unlock(&client_ctx->send_lock);
+		goto next;
+	}
+
 	if (send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0) < 0) {
 		LOG_ERR("Error sending lwm2m message: %d", -errno);
 		/* don't error here, retry until timeout */
 	}
+
+	sys_mutex_unlock(&client_ctx->send_lock);
 
 next:
 	pending = coap_pending_next_to_expire(client_ctx->pendings,
@@ -4046,6 +4064,7 @@ int lwm2m_engine_context_close(struct lwm2m_ctx *client_ctx)
 void lwm2m_engine_context_init(struct lwm2m_ctx *client_ctx)
 {
 	k_delayed_work_init(&client_ctx->retransmit_work, retransmit_request);
+	sys_mutex_init(&client_ctx->send_lock);
 }
 
 /* LwM2M Socket Integration */
