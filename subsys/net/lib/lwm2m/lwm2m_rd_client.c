@@ -93,7 +93,8 @@ enum sm_engine_state {
 	ENGINE_DEREGISTER,
 	ENGINE_DEREGISTER_SENT,
 	ENGINE_DEREGISTER_FAILED,
-	ENGINE_DEREGISTERED
+	ENGINE_DEREGISTERED,
+	ENGINE_NETWORK_ERROR,
 };
 
 struct lwm2m_rd_client_info {
@@ -101,6 +102,8 @@ struct lwm2m_rd_client_info {
 	struct lwm2m_ctx *ctx;
 	uint8_t engine_state;
 	uint8_t trigger_update;
+	uint8_t retries;
+	uint8_t retry_delay;
 
 	int64_t last_update;
 	int64_t last_tx;
@@ -144,6 +147,13 @@ static void set_sm_state(uint8_t sm_state)
 		   (client.engine_state >= ENGINE_DO_REGISTRATION &&
 		    client.engine_state <= ENGINE_DEREGISTER_SENT)) {
 		event = LWM2M_RD_CLIENT_EVENT_DISCONNECT;
+	} else if (sm_state == ENGINE_NETWORK_ERROR) {
+		client.retry_delay = 1 << client.retries;
+		client.retries++;
+		if (client.retries > CONFIG_LWM2M_RD_CLIENT_MAX_RETRIES) {
+			client.retries = 0;
+			event = LWM2M_RD_CLIENT_EVENT_NETWORK_ERROR;
+		}
 	}
 
 	/* TODO: add locking? */
@@ -500,6 +510,7 @@ static int sm_do_init(void)
 	client.ctx->srv_obj_inst = -1;
 	client.trigger_update = 0U;
 	client.lifetime = 0U;
+	client.retries = 0U;
 
 	/* Do bootstrap or registration */
 #if defined(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
@@ -563,7 +574,6 @@ cleanup:
 
 static int sm_do_bootstrap_reg(void)
 {
-	struct lwm2m_message *msg;
 	int ret;
 
 	/* clear out existing connection data */
@@ -587,6 +597,7 @@ static int sm_do_bootstrap_reg(void)
 	ret = lwm2m_engine_start(client.ctx);
 	if (ret < 0) {
 		LOG_ERR("Cannot init LWM2M engine (%d)", ret);
+		set_sm_state(ENGINE_NETWORK_ERROR);
 		return ret;
 	}
 
@@ -596,7 +607,7 @@ static int sm_do_bootstrap_reg(void)
 	} else {
 		LOG_ERR("Bootstrap registration err: %d", ret);
 		lwm2m_engine_context_close(client.ctx);
-		/* exit and try again */
+		set_sm_state(ENGINE_NETWORK_ERROR);
 	}
 
 	return ret;
@@ -760,6 +771,7 @@ static int sm_do_registration(void)
 	ret = lwm2m_engine_start(client.ctx);
 	if (ret < 0) {
 		LOG_ERR("Cannot init LWM2M engine (%d)", ret);
+		set_sm_state(ENGINE_NETWORK_ERROR);
 		return ret;
 	}
 
@@ -771,7 +783,7 @@ static int sm_do_registration(void)
 	} else {
 		LOG_ERR("Registration err: %d", ret);
 		lwm2m_engine_context_close(client.ctx);
-		/* exit and try again */
+		set_sm_state(ENGINE_NETWORK_ERROR);
 	}
 
 	return ret;
@@ -869,6 +881,22 @@ cleanup:
 	return ret;
 }
 
+static void sm_do_network_error(void)
+{
+	if (--client.retry_delay > 0) {
+		return;
+	}
+
+#if defined(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
+	if (client.ctx->bootstrap_mode) {
+		set_sm_state(ENGINE_DO_BOOTSTRAP_REG);
+		return;
+	}
+#endif
+
+	set_sm_state(ENGINE_DO_REGISTRATION);
+}
+
 static void lwm2m_rd_client_service(struct k_work *work)
 {
 	if (client.ctx) {
@@ -929,6 +957,10 @@ static void lwm2m_rd_client_service(struct k_work *work)
 
 		case ENGINE_DEREGISTERED:
 			set_sm_state(ENGINE_IDLE);
+			break;
+
+		case ENGINE_NETWORK_ERROR:
+			sm_do_network_error();
 			break;
 
 		default:
