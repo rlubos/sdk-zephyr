@@ -99,7 +99,6 @@ struct lwm2m_rd_client_info {
 	uint32_t lifetime;
 	struct lwm2m_ctx *ctx;
 	uint8_t engine_state;
-	uint8_t use_bootstrap;
 	uint8_t trigger_update;
 
 	int64_t last_update;
