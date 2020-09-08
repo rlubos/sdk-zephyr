@@ -77,6 +77,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
  * back into INIT again
  */
 enum sm_engine_state {
+	ENGINE_IDLE,
 	ENGINE_INIT,
 #if defined(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
 	ENGINE_DO_BOOTSTRAP_REG,
@@ -872,6 +873,8 @@ static void lwm2m_rd_client_service(struct k_work *work)
 {
 	if (client.ctx) {
 		switch (get_sm_state()) {
+		case ENGINE_IDLE:
+			break;
 
 		case ENGINE_INIT:
 			sm_do_init();
@@ -921,9 +924,11 @@ static void lwm2m_rd_client_service(struct k_work *work)
 			break;
 
 		case ENGINE_DEREGISTER_FAILED:
+			set_sm_state(ENGINE_IDLE);
 			break;
 
 		case ENGINE_DEREGISTERED:
+			set_sm_state(ENGINE_IDLE);
 			break;
 
 		default:
@@ -951,7 +956,12 @@ void lwm2m_rd_client_stop(struct lwm2m_ctx *client_ctx,
 	client.ctx = client_ctx;
 	client.event_cb = event_cb;
 
-	set_sm_state(ENGINE_DEREGISTER);
+	if (sm_is_registered()) {
+		set_sm_state(ENGINE_DEREGISTER);
+	} else {
+		set_sm_state(ENGINE_IDLE);
+	}
+
 	LOG_INF("Stop LWM2M Client: %s", log_strdup(client.ep_name));
 }
 
