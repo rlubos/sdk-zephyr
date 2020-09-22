@@ -865,12 +865,13 @@ typedef void (*lwm2m_ctx_event_cb_t)(struct lwm2m_ctx *ctx,
  *
  * @param[in] client_ctx LwM2M context
  * @param[in] ep_name Registered endpoint name
+ * @param[in] bootstrap Run bootstrap procedure in this session.
  * @param[in] event_cb Client event callback function
  *
  * @return 0 for success or negative in case of error.
  */
 void lwm2m_rd_client_start(struct lwm2m_ctx *client_ctx, const char *ep_name,
-			   lwm2m_ctx_event_cb_t event_cb);
+			   bool bootstrap, lwm2m_ctx_event_cb_t event_cb);
 
 /**
  * @brief Stop the LwM2M RD (De-register) Client

@@ -423,6 +423,7 @@ static void rd_client_event(struct lwm2m_ctx *client,
 
 void main(void)
 {
+	bool bootstrap = IS_ENABLED(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP);
 	int ret;
 
 	LOG_INF(APP_BANNER);
@@ -461,10 +462,11 @@ void main(void)
 		sprintf(&dev_str[i*2], "%02x", dev_id[i]);
 	}
 
-	lwm2m_rd_client_start(&client, dev_str, rd_client_event);
+	lwm2m_rd_client_start(&client, dev_str, bootstrap, rd_client_event);
 #else
 	/* client.sec_obj_inst is 0 as a starting point */
-	lwm2m_rd_client_start(&client, CONFIG_BOARD, rd_client_event);
+	lwm2m_rd_client_start(&client, CONFIG_BOARD, bootstrap,
+			      rd_client_event);
 #endif
 
 	k_sem_take(&quit_lock, K_FOREVER);
