@@ -1362,6 +1362,7 @@ int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, uint16_t data_len,
 	/* assign data elements */
 	res_inst->data_ptr = data_ptr;
 	res_inst->data_len = data_len;
+	res_inst->max_data_len = data_len;
 	res_inst->data_flags = data_flags;
 
 	return ret;
@@ -1375,7 +1376,7 @@ static int lwm2m_engine_set(char *pathstr, void *value, uint16_t len)
 	struct lwm2m_engine_res *res = NULL;
 	struct lwm2m_engine_res_inst *res_inst = NULL;
 	void *data_ptr = NULL;
-	size_t data_len = 0;
+	size_t max_data_len = 0;
 	int ret = 0;
 	bool changed = false;
 
@@ -1412,13 +1413,13 @@ static int lwm2m_engine_set(char *pathstr, void *value, uint16_t len)
 
 	/* setup initial data elements */
 	data_ptr = res_inst->data_ptr;
-	data_len = res_inst->data_len;
+	max_data_len = res_inst->max_data_len;
 
 	/* allow user to override data elements via callback */
 	if (res->pre_write_cb) {
 		data_ptr = res->pre_write_cb(obj_inst->obj_inst_id,
 					     res->res_id, res_inst->res_inst_id,
-					     &data_len);
+					     &max_data_len);
 	}
 
 	if (!data_ptr) {
@@ -1429,7 +1430,7 @@ static int lwm2m_engine_set(char *pathstr, void *value, uint16_t len)
 	}
 
 	/* check length (note: we add 1 to string length for NULL pad) */
-	if (len > res_inst->data_len -
+	if (len > res_inst->max_data_len -
 		(obj_field->data_type == LWM2M_RES_TYPE_STRING ? 1 : 0)) {
 		LOG_ERR("length %u is too long for res instance %d data",
 			len, path.res_id);
@@ -1512,6 +1513,8 @@ static int lwm2m_engine_set(char *pathstr, void *value, uint16_t len)
 		return -EINVAL;
 
 	}
+
+	res_inst->data_len = len;
 
 	if (res->post_write_cb) {
 		ret = res->post_write_cb(obj_inst->obj_inst_id,
@@ -1952,6 +1955,7 @@ int lwm2m_engine_delete_res_inst(char *pathstr)
 	}
 
 	res_inst->data_ptr = NULL;
+	res_inst->max_data_len = 0U;
 	res_inst->data_len = 0U;
 	res_inst->res_inst_id = RES_INSTANCE_NOT_CREATED;
 
@@ -2274,7 +2278,7 @@ static int lwm2m_write_handler_opaque(struct lwm2m_engine_obj_inst *obj_inst,
 		in->block_ctx->opaque = opaque_ctx;
 	}
 
-	return ret;
+	return opaque_ctx.len;
 }
 
 /* This function is exposed for the content format writers */
@@ -2303,7 +2307,7 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 
 	/* setup initial data elements */
 	data_ptr = res_inst->data_ptr;
-	data_len = res_inst->data_len;
+	data_len = res_inst->max_data_len;
 
 	/* allow user to override data elements via callback */
 	if (res->pre_write_cb) {
@@ -2335,6 +2339,7 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 				return ret;
 			}
 
+			len = ret;
 			break;
 
 		case LWM2M_RES_TYPE_STRING:
@@ -2421,6 +2426,8 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 	} else {
 		return -ENOENT;
 	}
+
+	res_inst->data_len = len;
 
 	if (res->post_write_cb &&
 	    obj_field->data_type != LWM2M_RES_TYPE_OPAQUE) {
