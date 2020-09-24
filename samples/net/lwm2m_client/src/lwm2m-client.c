@@ -373,6 +373,17 @@ static int lwm2m_setup(void)
 static void rd_client_event(struct lwm2m_ctx *client,
 			    enum lwm2m_rd_client_event client_event)
 {
+	char pathstr[10];
+	int ret;
+	uint8_t *identity;
+	uint16_t identity_len;
+	uint8_t *psk;
+	uint16_t psk_len;
+	uint8_t *uri;
+	uint16_t uri_len;
+	uint8_t flags;
+	int instance = 1;
+
 	switch (client_event) {
 
 	case LWM2M_RD_CLIENT_EVENT_NONE:
@@ -389,6 +400,42 @@ static void rd_client_event(struct lwm2m_ctx *client,
 
 	case LWM2M_RD_CLIENT_EVENT_BOOTSTRAP_TRANSFER_COMPLETE:
 		LOG_DBG("Bootstrap transfer complete");
+			/* Obtain URI. */
+		snprintk(pathstr, sizeof(pathstr), "0/%d/0", instance);
+
+		ret = lwm2m_engine_get_res_data(pathstr, (void **)&uri,
+						&uri_len, &flags);
+		if (ret < 0) {
+			LOG_ERR("Failed to obtain URI.");
+			return;
+		} else {
+			LOG_INF("URI has %d bytes", uri_len);
+		}
+
+		/* Obtain identity. */
+		snprintk(pathstr, sizeof(pathstr), "0/%d/3", instance);
+
+		ret = lwm2m_engine_get_res_data(pathstr, (void **)&identity,
+						&identity_len, &flags);
+		if (ret < 0) {
+			LOG_ERR("Failed to obtain client identity.");
+			return;
+		} else {
+			LOG_INF("Identity has %d bytes", identity_len);
+		}
+
+		/* Obtain PSK. */
+		snprintk(pathstr, sizeof(pathstr), "0/%d/5", instance);
+
+		ret = lwm2m_engine_get_res_data(pathstr, (void **)&psk,
+						&psk_len, &flags);
+		if (ret < 0) {
+			LOG_ERR("Failed to obtain PSK.");
+			return;
+		} else {
+			LOG_INF("PSK has %d bytes", psk_len);
+		}
+
 		break;
 
 	case LWM2M_RD_CLIENT_EVENT_REGISTRATION_FAILURE:
