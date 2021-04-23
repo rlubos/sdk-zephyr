@@ -4399,6 +4399,7 @@ static int lwm2m_engine_service(void)
 	struct observe_node *obs;
 	struct service_node *srv;
 	int64_t timestamp, service_due_timestamp;
+	bool no_delay = false;
 
 	/*
 	 * 1. scan the observer list
@@ -4418,7 +4419,8 @@ static int lwm2m_engine_service(void)
 				MSEC_PER_SEC * obs->min_period_sec) {
 			obs->last_timestamp = k_uptime_get();
 			generate_notify_message(obs, true);
-
+			no_delay = true;
+			break;
 		/*
 		 * automatic time-based notify requirements:
 		 * - current timestamp > last_timestamp + max_period_sec
@@ -4427,8 +4429,9 @@ static int lwm2m_engine_service(void)
 				MSEC_PER_SEC * obs->max_period_sec) {
 			obs->last_timestamp = k_uptime_get();
 			generate_notify_message(obs, false);
+			no_delay = true;
+			break;
 		}
-
 	}
 
 	timestamp = k_uptime_get();
@@ -4440,6 +4443,10 @@ static int lwm2m_engine_service(void)
 			srv->last_timestamp = k_uptime_get();
 			srv->service_work(NULL);
 		}
+	}
+
+	if (no_delay) {
+		return 0;
 	}
 
 	/* calculate how long to sleep till the next service */
