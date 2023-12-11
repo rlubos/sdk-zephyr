@@ -3200,12 +3200,7 @@ out:
 		goto next_state;
 	}
 
-	/* Make sure we close the connection only once by checking connection
-	 * state.
-	 */
-	if (do_close && conn->state != TCP_UNUSED && conn->state != TCP_CLOSED) {
-		tcp_conn_close(conn, close_status);
-	} else if (conn->context) {
+	if (conn->context) {
 		/* If the conn->context is not set, then the connection was
 		 * already closed.
 		 */
@@ -3229,6 +3224,13 @@ out:
 			/* Application is no longer there, unref the pkt */
 			tcp_pkt_unref(recv_pkt);
 		}
+	}
+
+	/* Make sure we close the connection only once by checking connection
+	 * state.
+	 */
+	if (do_close && conn->state != TCP_UNUSED && conn->state != TCP_CLOSED) {
+		tcp_conn_close(conn, close_status);
 	}
 
 	return verdict;
