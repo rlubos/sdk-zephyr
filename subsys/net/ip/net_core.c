@@ -59,6 +59,7 @@ LOG_MODULE_REGISTER(net_core, CONFIG_NET_CORE_LOG_LEVEL);
 
 #include "net_stats.h"
 
+#if defined(CONFIG_NET_NATIVE)
 static inline enum net_verdict process_data(struct net_pkt *pkt,
 					    bool is_loopback)
 {
@@ -545,6 +546,23 @@ static inline void l3_init(void)
 
 	NET_DBG("Network L3 init done");
 }
+#else /* CONFIG_NET_NATIVE */
+#define l3_init(...)
+#define init_rx_queues(...)
+int net_send_data(struct net_pkt *pkt)
+{
+	ARG_UNUSED(pkt);
+
+	return -ENOTSUP;
+}
+int net_recv_data(struct net_if *iface, struct net_pkt *pkt)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(pkt);
+
+	return -ENOTSUP;
+}
+#endif /* CONFIG_NET_NATIVE */
 
 static inline int services_init(void)
 {
