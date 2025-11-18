@@ -35,6 +35,13 @@ Device Drivers and Devicetree
 Bluetooth
 *********
 
+Bluetooth Host
+==============
+* Legacy Bluetooth LE pairing using the passkey entry method no longer grants authenticated (MITM)
+  protection as of the Bluetooth Core Specification v6.2. Stored bonds that were generated using
+  this method will be downgraded to unauthenticated when loaded from persistent storage, resulting
+  in a lower security level.
+
 Networking
 **********
 
